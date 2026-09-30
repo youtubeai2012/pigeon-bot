@@ -4,3 +4,4 @@ edge-tts
 rembg[cpu]
 pillow
 tiktok-uploader
+playwright
