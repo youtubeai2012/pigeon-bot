@@ -239,9 +239,9 @@ def random_mode():
     random.shuffle(pool)
     for vid in pool[:10]:
         print("Random pick:", vid)
-        ok = process(vid)
         used.add(vid)
         save(USED, used)
+        ok = process(vid)
         if ok:
             seen = load(STATE)
             seen.add(vid)
