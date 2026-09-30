@@ -11,6 +11,11 @@ on:
         type: choice
         options: [new, random]
         default: new
+      post:
+        description: "Post to TikTok? (no = just make the video, download it from the run page)"
+        type: choice
+        options: ["yes", "no"]
+        default: "yes"
       request_id:
         description: "Used by the phone app - leave empty"
         type: string
@@ -26,7 +31,7 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
@@ -38,7 +43,7 @@ jobs:
 
       - name: Install tools
         run: |
-          sudo apt-get update && sudo apt-get install -y ffmpeg
+          sudo apt-get update && sudo apt-get install -y ffmpeg xvfb
           pip install -U -r requirements.txt
           python -m playwright install --with-deps chromium
 
@@ -46,7 +51,8 @@ jobs:
         env:
           TIKTOK_SESSIONID: ${{ secrets.TIKTOK_SESSIONID }}
           MODE: ${{ inputs.mode || 'new' }}
-        run: python pigeon.py
+          POST: ${{ inputs.post == 'no' && '0' || '1' }}
+        run: xvfb-run -a --server-args="-screen 0 1920x1080x24" python pigeon.py
 
       - name: Save progress
         if: always()
@@ -55,7 +61,9 @@ jobs:
           git config user.email "pigeon-bot@users.noreply.github.com"
           [ -f state/seen.json ] && git add state/seen.json
           [ -f state/used.json ] && git add state/used.json
+          [ -f state/attempts.json ] && git add state/attempts.json
           [ -f assets/pigeon_cutout.png ] && git add assets/pigeon_cutout.png
+          [ -f assets/fonts/Anton-Regular.ttf ] && git add assets/fonts/Anton-Regular.ttf
           git commit -m "pigeon bot: update state" || echo "nothing to commit"
           git pull --rebase || true
           git push
@@ -69,10 +77,14 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-      - name: Upload debug screenshot
-        if: failure()
+      - name: Upload debug screenshots
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: debug
-          path: work/*.png
+          path: |
+            work/*.png
+            work/*.log
+            work/captions.ass
+          retention-days: 7
           if-no-files-found: ignore
