@@ -1,16 +1,22 @@
-"""Pigeon bot: new @zachdfilms TikTok -> transcript -> whispering pigeon over muted original -> post."""
-import asyncio, json, os, subprocess, sys
+"""Pigeon bot: @zachdfilms TikTok -> transcript -> whispering pigeon over muted original -> post.
+
+MODE=new    (default, used by the 30-min schedule) -> only brand-new videos
+MODE=random -> one random Zach video that has never been used before
+"""
+import asyncio, json, os, random, subprocess, sys
 from pathlib import Path
 
 HANDLE = "zachdfilms"
 ACCOUNT = f"https://www.tiktok.com/@{HANDLE}"
 ROOT = Path(__file__).parent
-STATE = ROOT / "state" / "seen.json"
+STATE = ROOT / "state" / "seen.json"   # videos the "new" checker already knows about
+USED = ROOT / "state" / "used.json"    # videos that have been turned into pigeon videos
 PIGEON_RAW = ROOT / "assets" / "pigeon.png"
 PIGEON_CUT = ROOT / "assets" / "pigeon_cutout.png"
 WORK = ROOT / "work"
 VOICE = "en-US-GuyNeural"
 MAX_PER_RUN = 1
+RANDOM_POOL = 150
 
 
 def run(cmd):
@@ -20,6 +26,14 @@ def run(cmd):
         print(p.stderr[-3000:], flush=True)
         raise RuntimeError(f"Command failed: {cmd[0]}")
     return p.stdout
+
+
+def load(path):
+    return set(json.loads(path.read_text())) if path.exists() else set()
+
+
+def save(path, items):
+    path.write_text(json.dumps(sorted(items)))
 
 
 def duration(path):
@@ -172,47 +186,80 @@ def post(video, caption):
         raise RuntimeError(f"TikTok upload failed: {failed}")
 
 
-def save(seen):
-    STATE.write_text(json.dumps(sorted(seen)))
+def process(vid):
+    """Make + post a pigeon video. Returns False if the video isn't Zach's."""
+    info = video_info(vid)
+    if not is_zach(info):
+        print(f"Skipping {vid}: uploader is '{info.get('uploader')}', not {HANDLE}")
+        return False
+    caption = info.get("description") or info.get("title") or ""
+    video = download(vid)
+    text = transcribe(video)
+    print("Transcript:", text)
+    raw = WORK / "voice.mp3"
+    asyncio.run(tts(text or "...", raw))
+    final = WORK / f"pigeon_{vid}.mp4"
+    render(video, raw, final)
+    post(final, caption)
+    print("Posted", vid)
+    return True
 
 
-def main():
-    WORK.mkdir(exist_ok=True)
-    STATE.parent.mkdir(exist_ok=True)
-    make_cutout()
+def new_mode():
     first_run = not STATE.exists()
-    seen = set(json.loads(STATE.read_text())) if not first_run else set()
+    seen = load(STATE)
+    used = load(USED)
     ids = latest_videos()
     if first_run:
-        save(ids)
+        save(STATE, ids)
         print("First run: marked existing videos as seen. Waiting for new posts.")
         return
-    candidates = [i for i in reversed(ids) if i not in seen]
+    candidates = [i for i in reversed(ids) if i not in seen and i not in used]
     if not candidates:
         print("No new videos.")
     done = 0
     for vid in candidates:
         if done >= MAX_PER_RUN:
             break
-        info = video_info(vid)
-        if not is_zach(info):
-            print(f"Skipping {vid}: uploader is '{info.get('uploader')}', not {HANDLE}")
-            seen.add(vid)
-            save(seen)
-            continue
-        caption = info.get("description") or info.get("title") or ""
-        video = download(vid)
-        text = transcribe(video)
-        print("Transcript:", text)
-        raw = WORK / "voice.mp3"
-        asyncio.run(tts(text or "...", raw))
-        final = WORK / f"pigeon_{vid}.mp4"
-        render(video, raw, final)
-        post(final, caption)
+        ok = process(vid)
         seen.add(vid)
-        save(seen)
-        done += 1
-        print("Posted", vid)
+        save(STATE, seen)
+        if ok:
+            used.add(vid)
+            save(USED, used)
+            done += 1
+
+
+def random_mode():
+    used = load(USED)
+    pool = [i for i in latest_videos(RANDOM_POOL) if i not in used]
+    print(f"{len(pool)} Zach videos not used yet")
+    if not pool:
+        raise RuntimeError("Every video found has already been used")
+    random.shuffle(pool)
+    for vid in pool[:10]:
+        print("Random pick:", vid)
+        ok = process(vid)
+        used.add(vid)
+        save(USED, used)
+        if ok:
+            seen = load(STATE)
+            seen.add(vid)
+            save(STATE, seen)
+            return
+    raise RuntimeError("Couldn't find a usable Zach video in 10 tries")
+
+
+def main():
+    WORK.mkdir(exist_ok=True)
+    STATE.parent.mkdir(exist_ok=True)
+    make_cutout()
+    mode = os.environ.get("MODE", "new").strip().lower()
+    print("Mode:", mode)
+    if mode == "random":
+        random_mode()
+    else:
+        new_mode()
 
 
 if __name__ == "__main__":

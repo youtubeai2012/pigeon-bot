@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: "*/30 * * * *"
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "new = check for new Zach videos, random = make one from a random unused Zach video"
+        type: choice
+        options: [new, random]
+        default: new
 
 permissions:
   contents: write
@@ -34,6 +40,7 @@ jobs:
       - name: Run pigeon bot
         env:
           TIKTOK_SESSIONID: ${{ secrets.TIKTOK_SESSIONID }}
+          MODE: ${{ inputs.mode || 'new' }}
         run: python pigeon.py
 
       - name: Save progress
@@ -42,10 +49,20 @@ jobs:
           git config user.name "pigeon-bot"
           git config user.email "pigeon-bot@users.noreply.github.com"
           [ -f state/seen.json ] && git add state/seen.json
+          [ -f state/used.json ] && git add state/used.json
           [ -f assets/pigeon_cutout.png ] && git add assets/pigeon_cutout.png
           git commit -m "pigeon bot: update state" || echo "nothing to commit"
           git pull --rebase || true
           git push
+
+      - name: Save pigeon video (download from run page)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pigeon-video
+          path: work/pigeon_*.mp4
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Upload debug screenshot
         if: failure()
