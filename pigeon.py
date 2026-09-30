@@ -580,8 +580,12 @@ def post_uploader_lib(video, caption):
         raise RuntimeError(f"tiktok-uploader failed: {failed}")
 
 
+def posting_enabled():
+    return os.environ.get("POST", "1").strip().lower() not in ("0", "false", "no")
+
+
 def post(video, caption):
-    if os.environ.get("POST", "1").strip() in ("0", "false", "no"):
+    if not posting_enabled():
         print("POST=0 -> not posting (video is in the pigeon-video artifact)")
         return
     if not os.environ.get("TIKTOK_SESSIONID"):
@@ -671,11 +675,12 @@ def random_mode():
         print("Random pick:", vid)
         ok = process(vid)
         if ok:
-            used.add(vid)
-            save(USED, used)
-            seen = load(STATE)
-            seen.add(vid)
-            save(STATE, seen)
+            if posting_enabled():
+                used.add(vid)
+                save(USED, used)
+                seen = load(STATE)
+                seen.add(vid)
+                save(STATE, seen)
             return
     raise RuntimeError("Couldn't find a usable Zack video in 10 tries")
 

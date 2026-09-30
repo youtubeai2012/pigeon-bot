@@ -33,10 +33,27 @@ class RandomModeTests(unittest.TestCase):
                 patch.object(pigeon, "latest_videos", return_value=["123"]),
                 patch.object(pigeon.random, "shuffle"),
                 patch.object(pigeon, "process", return_value=True),
+                patch.dict("os.environ", {"POST": "yes"}),
             ):
                 pigeon.random_mode()
             self.assertEqual(pigeon.load(used), {"123"})
             self.assertEqual(pigeon.load(seen), {"123"})
+
+    def test_preview_does_not_consume_video(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            used = Path(tmp) / "used.json"
+            seen = Path(tmp) / "seen.json"
+            with (
+                patch.object(pigeon, "USED", used),
+                patch.object(pigeon, "STATE", seen),
+                patch.object(pigeon, "latest_videos", return_value=["123"]),
+                patch.object(pigeon.random, "shuffle"),
+                patch.object(pigeon, "process", return_value=True),
+                patch.dict("os.environ", {"POST": "no"}),
+            ):
+                pigeon.random_mode()
+            self.assertFalse(used.exists())
+            self.assertFalse(seen.exists())
 
 
 if __name__ == "__main__":
