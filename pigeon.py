@@ -37,9 +37,28 @@ def make_cutout():
     print("Pigeon background removed ->", PIGEON_CUT)
 
 
+def ytdlp(use_cookies=True):
+    args = ["yt-dlp", "--impersonate", "chrome"]
+    sid = os.environ.get("TIKTOK_SESSIONID")
+    if use_cookies and sid:
+        jar = WORK / "cookies.txt"
+        jar.write_text("# Netscape HTTP Cookie File\n"
+                       f".tiktok.com\tTRUE\t/\tTRUE\t2147483647\tsessionid\t{sid}\n")
+        args += ["--cookies", str(jar)]
+    return args
+
+
 def latest_videos_ytdlp(n):
-    data = json.loads(run(["yt-dlp", "--flat-playlist", "--playlist-end", str(n), "-J", ACCOUNT]))
-    return [e["id"] for e in data.get("entries", []) if e.get("id")]
+    last = None
+    for cookies in (True, False):
+        try:
+            data = json.loads(run(ytdlp(cookies) + ["--flat-playlist", "--playlist-end", str(n), "-J", ACCOUNT]))
+            ids = [e["id"] for e in data.get("entries", []) if e.get("id")]
+            if ids:
+                return ids
+        except Exception as e:
+            last = e
+    raise RuntimeError(f"yt-dlp found no videos ({last})")
 
 
 def latest_videos_browser(n):
@@ -87,8 +106,8 @@ def latest_videos(n=5):
 def download(video_id):
     url = f"{ACCOUNT}/video/{video_id}"
     out = WORK / f"{video_id}.mp4"
-    info = json.loads(run(["yt-dlp", "-J", url]))
-    run(["yt-dlp", "-f", "mp4/best", "-o", str(out), url])
+    info = json.loads(run(ytdlp() + ["-J", url]))
+    run(ytdlp() + ["-f", "mp4/best", "-o", str(out), url])
     return out, info.get("description") or info.get("title") or ""
 
 
