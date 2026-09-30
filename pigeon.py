@@ -1,18 +1,18 @@
-"""Pigeon bot: @zachdfilms TikTok -> transcript -> talking pigeon over muted original -> post.
+"""Pigeon bot: @zackdfilms92 TikTok -> transcript -> talking pigeon over muted original -> post.
 
 MODE=new    (default, used by the 30-min schedule) -> only brand-new videos
-MODE=random -> one random Zach video that has never been used before
+MODE=random -> one random Zack video that has never been used before
 POST=0      -> make the video but don't post it (for testing)
 """
 import asyncio, json, math, os, random, re, subprocess, sys, time
 from pathlib import Path
 
-HANDLE = "zachdfilms"
+HANDLE = "zackdfilms92"
 ACCOUNT = f"https://www.tiktok.com/@{HANDLE}"
 ROOT = Path(__file__).parent
-STATE = ROOT / "state" / "seen.json"      # videos the "new" checker already knows about
-USED = ROOT / "state" / "used.json"       # videos that have been turned into pigeon videos
-TRIES = ROOT / "state" / "attempts.json"  # failed attempts per video (gives up after 3)
+STATE = ROOT / "state" / f"seen_{HANDLE}.json"      # videos the "new" checker already knows about
+USED = ROOT / "state" / f"used_{HANDLE}.json"       # videos that have been turned into pigeon videos
+TRIES = ROOT / "state" / f"attempts_{HANDLE}.json"  # failed attempts per video (gives up after 3)
 PIGEON_RAW = ROOT / "assets" / "pigeon.png"
 PIGEON_CUT = ROOT / "assets" / "pigeon_cutout.png"
 FONT_DIR = ROOT / "assets" / "fonts"
@@ -111,7 +111,7 @@ def latest_videos_ytdlp(n):
             for e in data.get("entries", []):
                 url = (e.get("url") or "").lower()
                 if url and "/@" in url and f"/@{HANDLE}/" not in url:
-                    print("Ignoring non-Zach entry:", url)
+                    print("Ignoring non-Zack entry:", url)
                     continue
                 if e.get("id"):
                     ids.append(e["id"])
@@ -160,7 +160,7 @@ def latest_videos(n=5):
                 return ids
         except Exception as e:
             print(f"{finder.__name__} failed: {e}", flush=True)
-    raise RuntimeError("Could not read @zachdfilms videos with any method")
+    raise RuntimeError(f"Could not read @{HANDLE} videos with any method")
 
 
 def video_info(video_id):
@@ -603,7 +603,7 @@ def post(video, caption):
 
 # ----------------------------------------------------------------- main flow
 def process(vid):
-    """Make + post a pigeon video. Returns False if the video isn't Zach's."""
+    """Make + post a pigeon video. Returns False if the video isn't Zack's."""
     info = video_info(vid)
     if not is_zach(info):
         print(f"Skipping {vid}: uploader is '{info.get('uploader')}', not {HANDLE}")
@@ -663,7 +663,7 @@ def new_mode():
 def random_mode():
     used = load(USED)
     pool = [i for i in latest_videos(RANDOM_POOL) if i not in used]
-    print(f"{len(pool)} Zach videos not used yet")
+    print(f"{len(pool)} Zack videos not used yet")
     if not pool:
         raise RuntimeError("Every video found has already been used")
     random.shuffle(pool)
@@ -677,7 +677,7 @@ def random_mode():
             seen.add(vid)
             save(STATE, seen)
             return
-    raise RuntimeError("Couldn't find a usable Zach video in 10 tries")
+    raise RuntimeError("Couldn't find a usable Zack video in 10 tries")
 
 
 def main():

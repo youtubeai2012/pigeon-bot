@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "new = check for new Zach videos, random = make one from a random unused Zach video"
+        description: "new = check for new Zack videos, random = make one from a random unused Zack video"
         type: choice
         options: [new, random]
         default: new
@@ -59,9 +59,7 @@ jobs:
         run: |
           git config user.name "pigeon-bot"
           git config user.email "pigeon-bot@users.noreply.github.com"
-          [ -f state/seen.json ] && git add state/seen.json
-          [ -f state/used.json ] && git add state/used.json
-          [ -f state/attempts.json ] && git add state/attempts.json
+          git add state/*.json
           [ -f assets/pigeon_cutout.png ] && git add assets/pigeon_cutout.png
           [ -f assets/fonts/Anton-Regular.ttf ] && git add assets/fonts/Anton-Regular.ttf
           git commit -m "pigeon bot: update state" || echo "nothing to commit"
