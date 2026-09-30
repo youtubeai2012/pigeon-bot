@@ -5,5 +5,6 @@ openai-whisper
 edge-tts
 rembg[cpu]
 pillow
+opencv-python-headless>=4.10,<5
 tiktok-uploader
 playwright

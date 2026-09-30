@@ -15,7 +15,7 @@ on:
         description: "Post to TikTok? (no = just make the video, download it from the run page)"
         type: choice
         options: ["yes", "no"]
-        default: "yes"
+        default: "no"
       request_id:
         description: "Used by the phone app - leave empty"
         type: string
@@ -51,7 +51,7 @@ jobs:
         env:
           TIKTOK_SESSIONID: ${{ secrets.TIKTOK_SESSIONID }}
           MODE: ${{ inputs.mode || 'new' }}
-          POST: ${{ inputs.post == 'no' && '0' || '1' }}
+          POST: ${{ inputs.post == 'yes' && '1' || '0' }}
         run: xvfb-run -a --server-args="-screen 0 1920x1080x24" python pigeon.py
 
       - name: Save progress

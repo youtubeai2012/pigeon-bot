@@ -392,7 +392,7 @@ class Pigeon:
         canvas = Image.new("RGBA", self.size, (0, 0, 0, 0))
         if scale != 1.0:
             img = img.resize((round(img.width * scale), round(img.height * scale)), Image.BICUBIC)
-        bob = -14 * open_amt + 5 * math.sin(2 * math.pi * 2.2 * t) * speaking_level
+        bob = -4 * open_amt + 1.5 * math.sin(2 * math.pi * 2.2 * t) * speaking_level
         ox = (self.size[0] - img.width) // 2
         oy = self.size[1] - self.pad // 2 - img.height + int(bob)
         canvas.alpha_composite(img, (ox, max(0, oy)))
@@ -401,6 +401,11 @@ class Pigeon:
 
 
 def render(video, voice_raw, words, out):
+    from caption_blur import blur_caption_video
+
+    cleaned_video = WORK / f"caption_blurred_{video.stem}.mp4"
+    print("Blurring Zack's burned-in caption letters", flush=True)
+    blur_caption_video(video, cleaned_video)
     voice = WORK / "voice_whisper.wav"
     whisper_voice(voice_raw, voice)
     subs = WORK / "captions.ass"
@@ -425,7 +430,7 @@ def render(video, voice_raw, words, out):
           f"[bg][1:v]overlay=x={px}:y={py}:format=auto[ov];"
           f"[ov]subtitles=filename='{subs_arg}':fontsdir='{fonts_arg}'[v]")
     cmd = ["ffmpeg", "-y", "-loglevel", "error",
-           "-stream_loop", "-1", "-i", str(video),
+           "-stream_loop", "-1", "-i", str(cleaned_video),
            "-f", "rawvideo", "-pix_fmt", "rgba", "-s", f"{pw}x{ph}", "-r", str(FPS), "-i", "-",
            "-i", str(voice),
            "-filter_complex", fc, "-filter_complex_threads", "2", "-map", "[v]", "-map", "2:a",
@@ -581,7 +586,7 @@ def post_uploader_lib(video, caption):
 
 
 def posting_enabled():
-    return os.environ.get("POST", "1").strip().lower() not in ("0", "false", "no")
+    return os.environ.get("POST", "0").strip().lower() in ("1", "true", "yes")
 
 
 def post(video, caption):

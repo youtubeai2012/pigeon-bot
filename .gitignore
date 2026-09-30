@@ -1,4 +1,5 @@
 work/
+preview-run*/
 __pycache__/
 *.pyc
 android/build/
