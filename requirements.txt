@@ -1,0 +1,6 @@
+yt-dlp
+openai-whisper
+edge-tts
+rembg[cpu]
+pillow
+tiktok-uploader
