@@ -44,6 +44,7 @@ jobs:
           [ -f state/seen.json ] && git add state/seen.json
           [ -f assets/pigeon_cutout.png ] && git add assets/pigeon_cutout.png
           git commit -m "pigeon bot: update state" || echo "nothing to commit"
+          git pull --rebase || true
           git push
 
       - name: Upload debug screenshot

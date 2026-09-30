@@ -2,7 +2,8 @@
 import asyncio, json, os, subprocess, sys
 from pathlib import Path
 
-ACCOUNT = "https://www.tiktok.com/@zachdfilms"
+HANDLE = "zachdfilms"
+ACCOUNT = f"https://www.tiktok.com/@{HANDLE}"
 ROOT = Path(__file__).parent
 STATE = ROOT / "state" / "seen.json"
 PIGEON_RAW = ROOT / "assets" / "pigeon.png"
@@ -53,7 +54,14 @@ def latest_videos_ytdlp(n):
     for cookies in (True, False):
         try:
             data = json.loads(run(ytdlp(cookies) + ["--flat-playlist", "--playlist-end", str(n), "-J", ACCOUNT]))
-            ids = [e["id"] for e in data.get("entries", []) if e.get("id")]
+            ids = []
+            for e in data.get("entries", []):
+                url = (e.get("url") or "").lower()
+                if url and "/@" in url and f"/@{HANDLE}/" not in url:
+                    print("Ignoring non-Zach entry:", url)
+                    continue
+                if e.get("id"):
+                    ids.append(e["id"])
             if ids:
                 return ids
         except Exception as e:
@@ -85,7 +93,7 @@ def latest_videos_browser(n):
         browser.close()
     ids = []
     for link in links:
-        m = re.search(r"/@zachdfilms/video/(\d+)", link)
+        m = re.search(rf"/@{HANDLE}/video/(\d+)", link)
         if m and m.group(1) not in ids:
             ids.append(m.group(1))
     return sorted(ids, key=int, reverse=True)[:n]
@@ -103,18 +111,25 @@ def latest_videos(n=5):
     raise RuntimeError("Could not read @zachdfilms videos with any method")
 
 
+def video_info(video_id):
+    return json.loads(run(ytdlp() + ["-J", f"{ACCOUNT}/video/{video_id}"]))
+
+
+def is_zach(info):
+    owner = " ".join(str(info.get(k) or "") for k in ("uploader", "uploader_url")).lower()
+    return HANDLE in owner
+
+
 def download(video_id):
-    url = f"{ACCOUNT}/video/{video_id}"
     out = WORK / f"{video_id}.mp4"
-    info = json.loads(run(ytdlp() + ["-J", url]))
-    run(ytdlp() + ["-f", "mp4/best", "-o", str(out), url])
-    return out, info.get("description") or info.get("title") or ""
+    run(ytdlp() + ["-f", "mp4/best", "-o", str(out), f"{ACCOUNT}/video/{video_id}"])
+    return out
 
 
 def transcribe(video):
     import whisper
     model = whisper.load_model("base")
-    return model.transcribe(str(video))["text"].strip()
+    return model.transcribe(str(video), language="en", fp16=False)["text"].strip()
 
 
 async def tts(text, out):
@@ -143,10 +158,22 @@ def render(video, voice_raw, out):
 
 def post(video, caption):
     from tiktok_uploader.upload import upload_video
-    failed = upload_video(str(video), description=caption[:2200],
-                          sessionid=os.environ["TIKTOK_SESSIONID"], headless=True)
+    sid = os.environ["TIKTOK_SESSIONID"]
+    cookies = [{"name": name, "value": sid, "domain": ".tiktok.com", "path": "/",
+                "secure": True, "httpOnly": True}
+               for name in ("sessionid", "sessionid_ss", "sid_tt")]
+    try:
+        failed = upload_video(str(video), description=caption[:2200],
+                              cookies_list=cookies, headless=True)
+    except TypeError:
+        failed = upload_video(str(video), description=caption[:2200],
+                              sessionid=sid, headless=True)
     if failed:
         raise RuntimeError(f"TikTok upload failed: {failed}")
+
+
+def save(seen):
+    STATE.write_text(json.dumps(sorted(seen)))
 
 
 def main():
@@ -157,14 +184,24 @@ def main():
     seen = set(json.loads(STATE.read_text())) if not first_run else set()
     ids = latest_videos()
     if first_run:
-        STATE.write_text(json.dumps(sorted(ids)))
+        save(ids)
         print("First run: marked existing videos as seen. Waiting for new posts.")
         return
-    new = [i for i in reversed(ids) if i not in seen][:MAX_PER_RUN]
-    if not new:
+    candidates = [i for i in reversed(ids) if i not in seen]
+    if not candidates:
         print("No new videos.")
-    for vid in new:
-        video, caption = download(vid)
+    done = 0
+    for vid in candidates:
+        if done >= MAX_PER_RUN:
+            break
+        info = video_info(vid)
+        if not is_zach(info):
+            print(f"Skipping {vid}: uploader is '{info.get('uploader')}', not {HANDLE}")
+            seen.add(vid)
+            save(seen)
+            continue
+        caption = info.get("description") or info.get("title") or ""
+        video = download(vid)
         text = transcribe(video)
         print("Transcript:", text)
         raw = WORK / "voice.mp3"
@@ -173,7 +210,8 @@ def main():
         render(video, raw, final)
         post(final, caption)
         seen.add(vid)
-        STATE.write_text(json.dumps(sorted(seen)))
+        save(seen)
+        done += 1
         print("Posted", vid)
 
 
