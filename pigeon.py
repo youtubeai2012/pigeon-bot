@@ -476,17 +476,14 @@ def dismiss_popups(page):
 
 
 def tiktok_cookies():
-    from http.cookies import SimpleCookie
-
     raw = os.environ["TIKTOK_SESSIONID"].strip()
-    parsed = SimpleCookie()
-    try:
-        parsed.load(raw)
-    except Exception:
-        pass
+    if raw.lower().startswith("cookie:"):
+        raw = raw.split(":", 1)[1].strip()
     names = ("sessionid", "sessionid_ss", "sid_tt")
-    values = {name: parsed[name].value for name in names if name in parsed}
-    if not values:
+    pairs = (part.strip().partition("=") for part in raw.split(";"))
+    values = {name: value for name, separator, value in pairs
+              if separator and name and value and re.fullmatch(r"[A-Za-z0-9_.-]+", name)}
+    if not any(name in values for name in names):
         values = dict.fromkeys(names, raw)
     return [{"name": name, "value": value, "domain": ".tiktok.com", "path": "/",
              "secure": True, "httpOnly": True, "sameSite": "None"}
