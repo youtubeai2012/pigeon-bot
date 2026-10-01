@@ -5,3 +5,5 @@ __pycache__/
 android/build/
 android/.gradle/
 *.apk
+client_secret*.json
+client_secrets*.json

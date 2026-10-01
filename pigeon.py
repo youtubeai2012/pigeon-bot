@@ -19,6 +19,7 @@ FONT_DIR = ROOT / "assets" / "fonts"
 FONT_FILE = FONT_DIR / "Anton-Regular.ttf"
 FONT_URL = "https://github.com/google/fonts/raw/main/ofl/anton/Anton-Regular.ttf"
 WORK = ROOT / "work"
+YOUTUBE_FAILED = False
 
 # Clear, brisk narration without an artificial whisper layer.
 VOICE = "en-US-ChristopherNeural"
@@ -663,6 +664,7 @@ def post(video, caption):
 # ----------------------------------------------------------------- main flow
 def process(vid):
     """Make + post a pigeon video. Returns False if the video isn't Zack's."""
+    global YOUTUBE_FAILED
     info = video_info(vid)
     if not is_zach(info):
         print(f"Skipping {vid}: uploader is '{info.get('uploader')}', not {HANDLE}")
@@ -676,6 +678,21 @@ def process(vid):
     final = WORK / f"pigeon_{vid}.mp4"
     render(video, raw, words, final)
     post(final, caption)
+    if posting_enabled():
+        from youtube_upload import configured, upload
+        if configured():
+            try:
+                youtube_status = upload(final, vid, caption, text)
+                if youtube_status["state"] != "published":
+                    YOUTUBE_FAILED = True
+            except Exception as error:
+                youtube_status = {"state": "failed", "error": str(error)}
+                YOUTUBE_FAILED = True
+                print("YouTube upload failed:", error, flush=True)
+        else:
+            youtube_status = {"state": "not_connected"}
+            print("YouTube is not connected yet; TikTok post is unaffected.", flush=True)
+        (WORK / "youtube_status.json").write_text(json.dumps(youtube_status))
     return True
 
 
@@ -754,6 +771,8 @@ def main():
         random_mode()
     else:
         new_mode()
+    if YOUTUBE_FAILED:
+        raise RuntimeError("TikTok posted, but YouTube did not publish publicly; see youtube_status.json")
 
 
 if __name__ == "__main__":

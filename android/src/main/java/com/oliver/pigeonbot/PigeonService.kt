@@ -84,9 +84,9 @@ class PigeonService : Service() {
         val got = gh.downloadVideo(id, File(filesDir, "latest.mp4"))
         when {
             got && conclusion == "success" ->
-                done("Pigeon video posted!", "Done! Your pigeon video was posted to TikTok and is ready to download.")
+                done("Pigeon video ready!", "Video finished. Open the GitHub run to see TikTok and YouTube publishing results.")
             got ->
-                done("Pigeon video ready!", "The video is ready, but posting to TikTok failed. Tap 'Open run on GitHub' for details.")
+                done("Pigeon video ready!", "The video is ready, but a publishing step failed. Tap 'Open run on GitHub' for details.")
             else ->
                 done("Pigeon bot failed", "No video was made (run $conclusion). Tap 'Open run on GitHub' to see why.")
         }

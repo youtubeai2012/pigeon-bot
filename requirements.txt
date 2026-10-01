@@ -8,3 +8,5 @@ pillow
 opencv-python-headless>=4.10,<5
 tiktok-uploader
 playwright
+google-api-python-client
+google-auth-oauthlib
