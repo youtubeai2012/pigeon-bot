@@ -203,7 +203,7 @@ class MainActivity : Activity() {
             text = "0:00 / 0:00"
             textSize = 12f
             setTextColor(Color.LTGRAY)
-            gravity = Gravity.CENTER_END
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
             setSingleLine(true)
         }
         controls.addView(time, LinearLayout.LayoutParams(dp(88), dp(48)))
