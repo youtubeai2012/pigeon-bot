@@ -475,12 +475,27 @@ def dismiss_popups(page):
             pass
 
 
-def post_playwright(video, caption):
+def tiktok_cookies():
+    from http.cookies import SimpleCookie
+
+    raw = os.environ["TIKTOK_SESSIONID"].strip()
+    parsed = SimpleCookie()
+    try:
+        parsed.load(raw)
+    except Exception:
+        pass
+    names = ("sessionid", "sessionid_ss", "sid_tt")
+    values = {name: parsed[name].value for name in names if name in parsed}
+    if not values:
+        values = dict.fromkeys(names, raw)
+    return [{"name": name, "value": value, "domain": ".tiktok.com", "path": "/",
+             "secure": True, "httpOnly": True, "sameSite": "None"}
+            for name, value in values.items()]
+
+
+def post_playwright(video, caption, check_only=False):
     from playwright.sync_api import sync_playwright
-    sid = os.environ["TIKTOK_SESSIONID"].strip()
-    cookies = [{"name": n, "value": sid, "domain": ".tiktok.com", "path": "/",
-                "secure": True, "httpOnly": True, "sameSite": "None"}
-               for n in ("sessionid", "sessionid_ss", "sid_tt")]
+    cookies = tiktok_cookies()
     caption = re.sub(r"\s+", " ", caption).strip()[:2000]
     headless = not os.environ.get("DISPLAY")
     with sync_playwright() as p:
@@ -503,8 +518,11 @@ def post_playwright(video, caption):
             page.wait_for_timeout(6000)
             shot(page, "1_opened")
             if "login" in page.url:
-                raise RuntimeError("TikTok sent us to the LOGIN page -> your TIKTOK_SESSIONID secret is "
-                                   "wrong or expired. Get a fresh sessionid cookie and update the secret.")
+                raise RuntimeError("TikTok sent us to the LOGIN page -> it did not accept the saved cookies. "
+                                   "Refresh TIKTOK_SESSIONID with a current sessionid value or full Cookie header.")
+            if check_only:
+                print("TikTok Studio accepted the saved session", flush=True)
+                return
             dismiss_popups(page)
             file_input = page.locator("input[type=file]").first
             file_input.wait_for(state="attached", timeout=60000)
@@ -574,9 +592,8 @@ def post_playwright(video, caption):
 
 def post_uploader_lib(video, caption):
     from tiktok_uploader.upload import upload_video
-    sid = os.environ["TIKTOK_SESSIONID"].strip()
-    cookies = [{"name": n, "value": sid, "domain": ".tiktok.com", "path": "/",
-                "secure": True, "httpOnly": True} for n in ("sessionid", "sessionid_ss", "sid_tt")]
+    cookies = tiktok_cookies()
+    sid = next((cookie["value"] for cookie in cookies if cookie["name"] == "sessionid"), cookies[0]["value"])
     try:
         failed = upload_video(str(video), description=caption[:2000], cookies_list=cookies, headless=True)
     except TypeError:
@@ -693,9 +710,12 @@ def random_mode():
 def main():
     WORK.mkdir(exist_ok=True)
     STATE.parent.mkdir(exist_ok=True)
+    mode = os.environ.get("MODE", "new").strip().lower()
+    if mode == "check_auth":
+        post_playwright(None, "", check_only=True)
+        return
     make_cutout()
     get_font()
-    mode = os.environ.get("MODE", "new").strip().lower()
     print("Mode:", mode)
     if mode == "random":
         random_mode()

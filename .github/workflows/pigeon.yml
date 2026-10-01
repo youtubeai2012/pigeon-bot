@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "new = check for new Zack videos, random = make one from a random unused Zack video"
+        description: "new = check for new Zack videos, random = make one, check_auth = test TikTok login"
         type: choice
-        options: [new, random]
+        options: [new, random, check_auth]
         default: new
       post:
         description: "Post to TikTok? (no = just make the video, download it from the run page)"
