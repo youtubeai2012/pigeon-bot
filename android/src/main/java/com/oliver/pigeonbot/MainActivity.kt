@@ -19,12 +19,13 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.MediaController
+import android.widget.SeekBar
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import android.widget.VideoView
 import java.io.File
+import java.util.Locale
 
 class MainActivity : Activity() {
     private val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
@@ -36,10 +37,14 @@ class MainActivity : Activity() {
     private var linkView: TextView? = null
     private var redButton: TextView? = null
     private var videoView: VideoView? = null
+    private var playButton: TextView? = null
+    private var seekBar: SeekBar? = null
+    private var timeView: TextView? = null
+    private var seeking = false
     private var shownStamp = 0L
 
     private val tick = object : Runnable {
-        override fun run() { refresh(); handler.postDelayed(this, 1500) }
+        override fun run() { refresh(); handler.postDelayed(this, 750) }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -69,6 +74,7 @@ class MainActivity : Activity() {
     private fun showScreen() {
         shownStamp = 0L
         statusView = null; linkView = null; redButton = null; videoView = null
+        playButton = null; seekBar = null; timeView = null
         if (Store.token(this).isEmpty()) tokenScreen() else mainScreen()
     }
 
@@ -152,14 +158,57 @@ class MainActivity : Activity() {
         }
         col.addView(link, LinearLayout.LayoutParams(MATCH, WRAP))
 
-        val frame = FrameLayout(this)
+        val frame = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         val vv = VideoView(this)
-        frame.addView(vv, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER))
+        frame.addView(vv, FrameLayout.LayoutParams(MATCH, MATCH, Gravity.CENTER))
         col.addView(frame, LinearLayout.LayoutParams(MATCH, 0, 1f).apply { topMargin = dp(8) })
-        val mc = MediaController(this)
-        mc.setAnchorView(vv)
-        vv.setMediaController(mc)
-        vv.setOnPreparedListener { mp -> mp.isLooping = true; vv.start() }
+        val controls = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+            background = GradientDrawable().apply {
+                setColor(Color.rgb(35, 35, 35))
+                cornerRadius = dp(12).toFloat()
+            }
+        }
+        val play = TextView(this).apply {
+            text = "▶"
+            textSize = 26f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            contentDescription = "Play or pause video"
+            setOnClickListener {
+                if (vv.isPlaying) vv.pause() else vv.start()
+                updatePlayerControls()
+            }
+        }
+        controls.addView(play, LinearLayout.LayoutParams(dp(48), dp(48)))
+        val seek = SeekBar(this).apply {
+            max = 1000
+            progressTintList = android.content.res.ColorStateList.valueOf(Color.rgb(255, 81, 93))
+            thumbTintList = android.content.res.ColorStateList.valueOf(Color.rgb(255, 81, 93))
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onStartTrackingTouch(bar: SeekBar) { seeking = true }
+                override fun onStopTrackingTouch(bar: SeekBar) { seeking = false; updatePlayerControls() }
+                override fun onProgressChanged(bar: SeekBar, progress: Int, fromUser: Boolean) {
+                    if (fromUser && vv.duration > 0) {
+                        vv.seekTo((vv.duration.toLong() * progress / 1000).toInt())
+                        updatePlayerControls()
+                    }
+                }
+            })
+        }
+        controls.addView(seek, LinearLayout.LayoutParams(0, dp(48), 1f))
+        val time = TextView(this).apply {
+            text = "0:00 / 0:00"
+            textSize = 12f
+            setTextColor(Color.LTGRAY)
+            gravity = Gravity.CENTER_END
+            setSingleLine(true)
+        }
+        controls.addView(time, LinearLayout.LayoutParams(dp(88), dp(48)))
+        col.addView(controls, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(8) })
+        vv.setOnPreparedListener { mp -> mp.isLooping = true; vv.start(); updatePlayerControls() }
         vv.setOnErrorListener { _, _, _ -> st.text = "Couldn't play the video file."; true }
 
         col.addView(label("Change GitHub token", 13f, false).apply {
@@ -170,7 +219,20 @@ class MainActivity : Activity() {
 
         setContentView(col)
         statusView = st; linkView = link; redButton = btn; videoView = vv
+        playButton = play; seekBar = seek; timeView = time
         refresh()
+    }
+
+    private fun formatTime(ms: Int): String =
+        String.format(Locale.US, "%d:%02d", ms / 60000, (ms / 1000) % 60)
+
+    private fun updatePlayerControls() {
+        val vv = videoView ?: return
+        val duration = vv.duration.coerceAtLeast(0)
+        val position = vv.currentPosition.coerceAtLeast(0)
+        playButton?.text = if (vv.isPlaying) "Ⅱ" else "▶"
+        if (!seeking) seekBar?.progress = if (duration > 0) (position.toLong() * 1000 / duration).toInt() else 0
+        timeView?.text = "${formatTime(position)} / ${formatTime(duration)}"
     }
 
     private fun refresh() {
@@ -184,6 +246,7 @@ class MainActivity : Activity() {
             shownStamp = f.lastModified()
             videoView?.setVideoPath(f.absolutePath)
         }
+        updatePlayerControls()
     }
 
     private fun startBot() {
