@@ -586,7 +586,7 @@ def post_uploader_lib(video, caption):
 
 
 def posting_enabled():
-    return os.environ.get("POST", "0").strip().lower() in ("1", "true", "yes")
+    return os.environ.get("POST", "1").strip().lower() in ("1", "true", "yes")
 
 
 def post(video, caption):
