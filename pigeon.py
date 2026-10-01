@@ -20,10 +20,10 @@ FONT_FILE = FONT_DIR / "Anton-Regular.ttf"
 FONT_URL = "https://github.com/google/fonts/raw/main/ofl/anton/Anton-Regular.ttf"
 WORK = ROOT / "work"
 
-# Voice: deep US man. Change to en-GB-RyanNeural / en-US-EricNeural etc. if you like.
+# Clear, brisk narration without an artificial whisper layer.
 VOICE = "en-US-ChristopherNeural"
-VOICE_RATE = "-6%"
-VOICE_PITCH = "-14Hz"
+VOICE_RATE = "+8%"
+VOICE_PITCH = "-3Hz"
 
 W, H, FPS = 1080, 1920, 30
 PIGEON_W = 400          # pigeon width on screen
@@ -67,6 +67,15 @@ def duration(path):
                       "-of", "default=nw=1:nk=1", path], quiet=True).strip())
 
 
+def output_size(video):
+    data = json.loads(run(["ffprobe", "-v", "error", "-select_streams", "v:0",
+                           "-show_entries", "stream=width,height", "-of", "json", video], quiet=True))
+    source = data["streams"][0]
+    source_canvas_width = min(source["width"], round(source["height"] * 9 / 16))
+    width = min(2160, max(W, round(source_canvas_width / 2) * 2))
+    return width, round(width * 16 / 9 / 2) * 2
+
+
 def make_cutout():
     if PIGEON_CUT.exists():
         return
@@ -93,11 +102,11 @@ def get_font():
 # ----------------------------------------------------------------- finding videos
 def ytdlp(use_cookies=True):
     args = ["yt-dlp", "--impersonate", "chrome"]
-    sid = os.environ.get("TIKTOK_SESSIONID")
-    if use_cookies and sid:
+    if use_cookies and os.environ.get("TIKTOK_SESSIONID"):
         jar = WORK / "cookies.txt"
-        jar.write_text("# Netscape HTTP Cookie File\n"
-                       f".tiktok.com\tTRUE\t/\tTRUE\t2147483647\tsessionid\t{sid}\n")
+        jar.write_text("# Netscape HTTP Cookie File\n" + "".join(
+            f".tiktok.com\tTRUE\t/\tTRUE\t2147483647\t{cookie['name']}\t{cookie['value']}\n"
+            for cookie in tiktok_cookies()))
         args += ["--cookies", str(jar)]
     return args
 
@@ -129,10 +138,8 @@ def latest_videos_browser(n):
         ctx = browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                        "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
-        sid = os.environ.get("TIKTOK_SESSIONID")
-        if sid:
-            ctx.add_cookies([{"name": "sessionid", "value": sid,
-                              "domain": ".tiktok.com", "path": "/"}])
+        if os.environ.get("TIKTOK_SESSIONID"):
+            ctx.add_cookies(tiktok_cookies())
         page = ctx.new_page()
         page.goto(ACCOUNT, wait_until="domcontentloaded", timeout=60000)
         try:
@@ -184,9 +191,10 @@ def pick_format(info):
         good.append(f)
     if not good:
         return None
-    # prefer h264 (plays everywhere), then biggest resolution
-    good.sort(key=lambda f: (("h264" in str(f.get("vcodec")) or "avc" in str(f.get("vcodec"))),
-                             f.get("height") or 0, f.get("tbr") or 0))
+    # Preserve the sharpest source; the render itself is always H.264 MP4.
+    good.sort(key=lambda f: ((f.get("width") or 0) * (f.get("height") or 0),
+                             f.get("tbr") or 0,
+                             "h264" in str(f.get("vcodec")) or "avc" in str(f.get("vcodec"))))
     best = good[-1]
     print("Using format:", best.get("format_id"), best.get("format_note"), best.get("vcodec"),
           f"{best.get('width')}x{best.get('height')}")
@@ -226,16 +234,14 @@ async def tts(text, out):
     return words
 
 
-def whisper_voice(raw, out):
-    """Deep, breathy 'whisper' version of the voice (keeps the timing)."""
+def polish_voice(raw, out):
+    """Improve intelligibility while preserving speech timing."""
     run(["ffmpeg", "-y", "-loglevel", "error", "-i", raw, "-filter_complex",
-         "[0:a]aresample=44100,highpass=f=70,lowpass=f=7500,"
-         "equalizer=f=120:t=q:w=1:g=4,equalizer=f=3500:t=q:w=1.5:g=3,"
-         "acompressor=threshold=-20dB:ratio=3:attack=5:release=80,"
-         "aecho=0.8:0.5:35:0.18,volume=1.5[v];"
-         "anoisesrc=color=pink:amplitude=0.008:r=44100[n];"
-         "[v][n]amix=inputs=2:duration=first:normalize=0[a]",
-         "-map", "[a]", "-ac", "2", out])
+         "highpass=f=80,lowpass=f=12000,"
+         "equalizer=f=280:t=q:w=1:g=-2,equalizer=f=3200:t=q:w=1.2:g=2,"
+         "acompressor=threshold=-21dB:ratio=2.3:attack=8:release=140,"
+         "loudnorm=I=-16:TP=-1.5:LRA=9[a]",
+         "-map", "[a]", "-ar", "44100", "-ac", "2", "-c:a", "pcm_s16le", out])
 
 
 def loudness(wav, fps=FPS):
@@ -262,17 +268,18 @@ def ass_time(t):
     return f"{int(t // 3600)}:{int(t % 3600 // 60):02d}:{t % 60:05.2f}"
 
 
-def make_captions(words, path):
+def make_captions(words, path, frame_width=W, frame_height=H):
     font = "Anton" if FONT_FILE.exists() else "DejaVu Sans"
+    scale = frame_width / W
     head = f"""[Script Info]
 ScriptType: v4.00+
-PlayResX: {W}
-PlayResY: {H}
+PlayResX: {frame_width}
+PlayResY: {frame_height}
 WrapStyle: 2
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Cap,{font},104,&H00FFFFFF,&H00FFFFFF,&H00000000,&H96000000,0,0,0,0,100,100,1,0,1,9,4,5,60,60,0,1
+Style: Cap,{font},{round(104 * scale)},&H00FFFFFF,&H00FFFFFF,&H00000000,&H96000000,0,0,0,0,100,100,1,0,1,{round(9 * scale)},{round(4 * scale)},{round(5 * scale)},{round(60 * scale)},{round(60 * scale)},0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -312,23 +319,24 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     parts.append(t)
             pop = "{\\fscx88\\fscy88\\t(0,90,\\fscx100\\fscy100)}" if wi == 0 else ""
             lines.append(f"Dialogue: 0,{ass_time(start)},{ass_time(end)},Cap,,0,0,0,,"
-                         f"{{\\pos({W // 2},{CAPTION_Y})}}{pop}" + " ".join(parts))
+                         f"{{\\pos({frame_width // 2},{round(CAPTION_Y * scale)})}}{pop}" + " ".join(parts))
     Path(path).write_text(head + "\n".join(lines) + "\n", encoding="utf-8")
 
 
 # ----------------------------------------------------------------- talking pigeon
 class Pigeon:
-    def __init__(self):
+    def __init__(self, scale=1.0):
         from PIL import Image, ImageDraw, ImageFilter
         self.Image, self.ImageDraw, self.ImageFilter = Image, ImageDraw, ImageFilter
         src = Image.open(PIGEON_CUT).convert("RGBA")
-        s = PIGEON_W / src.width
+        pigeon_width = round(PIGEON_W * scale)
+        s = pigeon_width / src.width
         sy = src.height * s / REF_H
-        sx = PIGEON_W / REF_W
-        self.base = src.resize((PIGEON_W, round(src.height * s)), Image.LANCZOS)
+        sx = pigeon_width / REF_W
+        self.base = src.resize((pigeon_width, round(src.height * s)), Image.LANCZOS)
         pt = lambda p: (p[0] * sx, p[1] * sy)
         self.hinge = pt(BEAK_HINGE)
-        self.pad = 70
+        self.pad = round(70 * scale)
         self.size = (self.base.width + self.pad * 2, self.base.height + self.pad * 2)
 
         # lower beak layer (the part that moves)
@@ -402,15 +410,21 @@ class Pigeon:
 
 def render(video, voice_raw, words, out):
     from caption_blur import blur_caption_video
+    from sound_effects import make_effects
 
+    frame_width, frame_height = output_size(video)
+    scale = frame_width / W
+    print(f"Rendering at {frame_width}x{frame_height} from best available source", flush=True)
     cleaned_video = WORK / f"caption_blurred_{video.stem}.mp4"
     print("Blurring Zack's burned-in caption letters", flush=True)
     blur_caption_video(video, cleaned_video)
-    voice = WORK / "voice_whisper.wav"
-    whisper_voice(voice_raw, voice)
+    voice = WORK / "voice_polished.wav"
+    polish_voice(voice_raw, voice)
     subs = WORK / "captions.ass"
-    make_captions(words, subs)
+    make_captions(words, subs, frame_width, frame_height)
     length = max(duration(video), duration(voice) + 0.4)
+    effects = WORK / "quiet_effects.wav"
+    has_effects = make_effects(words, length, effects)
     frames = int(math.ceil(length * FPS))
     opens = loudness(voice)
     speak = []  # slower "is talking" envelope for head motion
@@ -419,23 +433,28 @@ def render(video, voice_raw, words, out):
         cur += (o - cur) * 0.08
         speak.append(min(1.0, cur * 2.2))
 
-    pig = Pigeon()
+    pig = Pigeon(scale)
     pw, ph = pig.size
-    px = PIGEON_X - pig.pad
-    py = H - PIGEON_BOTTOM - ph
+    px = round(PIGEON_X * scale) - pig.pad
+    py = frame_height - round(PIGEON_BOTTOM * scale) - ph
     subs_arg = str(subs).replace("\\", "/").replace(":", "\\:")
     fonts_arg = str(FONT_DIR).replace("\\", "/").replace(":", "\\:")
-    fc = (f"[0:v]scale={W}:{H}:force_original_aspect_ratio=decrease,"
-          f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={FPS}[bg];"
+    fc = (f"[0:v]scale={frame_width}:{frame_height}:force_original_aspect_ratio=decrease:flags=lanczos,"
+          f"pad={frame_width}:{frame_height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={FPS}[bg];"
           f"[bg][1:v]overlay=x={px}:y={py}:format=auto[ov];"
           f"[ov]subtitles=filename='{subs_arg}':fontsdir='{fonts_arg}'[v]")
+    if has_effects:
+        fc += ";[2:a][3:a]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[a]"
     cmd = ["ffmpeg", "-y", "-loglevel", "error",
            "-stream_loop", "-1", "-i", str(cleaned_video),
            "-f", "rawvideo", "-pix_fmt", "rgba", "-s", f"{pw}x{ph}", "-r", str(FPS), "-i", "-",
-           "-i", str(voice),
-           "-filter_complex", fc, "-filter_complex_threads", "2", "-map", "[v]", "-map", "2:a",
-           "-threads", "4", "-t", f"{length:.2f}", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-           "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(out)]
+           "-i", str(voice)]
+    if has_effects:
+        cmd += ["-i", str(effects)]
+    cmd += ["-filter_complex", fc, "-filter_complex_threads", "2", "-map", "[v]",
+            "-map", "[a]" if has_effects else "2:a",
+            "-threads", "4", "-t", f"{length:.2f}", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+            "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(out)]
     print("+ ffmpeg render (talking pigeon)", flush=True)
     log = open(WORK / "ffmpeg_render.log", "w")
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=log)
