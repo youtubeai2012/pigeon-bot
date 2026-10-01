@@ -57,7 +57,7 @@ def caption_mask(frame):
 
     if not mask.any():
         return mask
-    radius = max(3, round(height * 0.009))
+    radius = max(4, round(height * 0.015))
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (radius * 2 + 1, radius * 2 + 1))
     return cv2.dilate(mask, kernel)
 
@@ -67,7 +67,7 @@ def blur_caption_frame(frame):
     if not mask.any():
         return frame
     height = frame.shape[0]
-    blurred = cv2.GaussianBlur(frame, (0, 0), sigmaX=max(8, height * 0.018))
+    blurred = cv2.GaussianBlur(frame, (0, 0), sigmaX=max(12, height * 0.03))
     alpha = cv2.GaussianBlur(mask, (0, 0), sigmaX=max(1.5, height * 0.0025))
     alpha = alpha.astype(np.float32)[:, :, None] / 255.0
     return np.uint8(np.clip(frame * (1 - alpha) + blurred * alpha, 0, 255))
