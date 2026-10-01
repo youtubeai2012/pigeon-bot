@@ -237,7 +237,7 @@ async def tts(text, out):
 def polish_voice(raw, out):
     """Improve intelligibility while preserving speech timing."""
     run(["ffmpeg", "-y", "-loglevel", "error", "-i", raw, "-filter_complex",
-         "highpass=f=80,lowpass=f=12000,"
+         "highpass=f=80,lowpass=f=7500,"
          "equalizer=f=280:t=q:w=1:g=-2,equalizer=f=3200:t=q:w=1.2:g=2,"
          "acompressor=threshold=-21dB:ratio=2.3:attack=8:release=140,"
          "loudnorm=I=-16:TP=-1.5:LRA=9[a]",
@@ -422,7 +422,8 @@ def render(video, voice_raw, words, out):
     polish_voice(voice_raw, voice)
     subs = WORK / "captions.ass"
     make_captions(words, subs, frame_width, frame_height)
-    length = max(duration(video), duration(voice) + 0.4)
+    # End with the narration; a longer source clip would leave a silent outro.
+    length = duration(voice) + 0.35
     effects = WORK / "quiet_effects.wav"
     has_effects = make_effects(words, length, effects)
     frames = int(math.ceil(length * FPS))
@@ -443,8 +444,11 @@ def render(video, voice_raw, words, out):
           f"pad={frame_width}:{frame_height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={FPS}[bg];"
           f"[bg][1:v]overlay=x={px}:y={py}:format=auto[ov];"
           f"[ov]subtitles=filename='{subs_arg}':fontsdir='{fonts_arg}'[v]")
+    fc += f";[2:a]apad=pad_dur=0.35,atrim=duration={length:.3f}[voice]"
     if has_effects:
-        fc += ";[2:a][3:a]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[a]"
+        fc += ";[voice][3:a]amix=inputs=2:duration=first:normalize=0[a]"
+    else:
+        fc += ";[voice]anull[a]"
     cmd = ["ffmpeg", "-y", "-loglevel", "error",
            "-stream_loop", "-1", "-i", str(cleaned_video),
            "-f", "rawvideo", "-pix_fmt", "rgba", "-s", f"{pw}x{ph}", "-r", str(FPS), "-i", "-",
@@ -452,7 +456,7 @@ def render(video, voice_raw, words, out):
     if has_effects:
         cmd += ["-i", str(effects)]
     cmd += ["-filter_complex", fc, "-filter_complex_threads", "2", "-map", "[v]",
-            "-map", "[a]" if has_effects else "2:a",
+            "-map", "[a]",
             "-threads", "4", "-t", f"{length:.2f}", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
             "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(out)]
     print("+ ffmpeg render (talking pigeon)", flush=True)

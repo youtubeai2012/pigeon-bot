@@ -16,13 +16,15 @@ KEYWORDS = {
     "whoosh": {"fly", "flying", "jump", "jumps", "jumped", "throw", "threw", "launched",
                "spin", "spinning", "spins", "swing", "swinging", "slide", "slid"},
     "fire": {"fire", "flame", "burn", "burned", "burning", "heat", "lava"},
-    "chime": {"reveal", "revealed", "discovered", "finally", "suddenly", "secret", "surprise"},
+    "beep": {"dialysis", "hospital", "doctor", "doctors", "machine", "transplant", "surgery"},
+    "chime": {"reveal", "revealed", "discovered", "finally", "suddenly", "secret", "surprise",
+              "adopted", "adoption", "family", "home"},
 }
 
 
 def cue(kind, rng):
     seconds = {"impact": 0.38, "splash": 0.60, "whoosh": 0.52,
-               "fire": 0.62, "chime": 0.65}[kind]
+               "fire": 0.62, "beep": 0.35, "chime": 0.65}[kind]
     t = np.arange(round(seconds * SAMPLE_RATE), dtype=np.float32) / SAMPLE_RATE
     noise = rng.standard_normal(len(t)).astype(np.float32)
     if kind == "impact":
@@ -34,13 +36,15 @@ def cue(kind, rng):
     elif kind == "fire":
         pops = (rng.random(len(t)) > 0.997).astype(np.float32)
         sound = noise * 0.25 * np.exp(-2 * t) + pops * np.exp(-4 * t)
+    elif kind == "beep":
+        sound = np.sin(2 * np.pi * 740 * t) * np.exp(-9 * t)
     else:
         sound = (np.sin(2 * np.pi * 660 * t) + 0.5 * np.sin(2 * np.pi * 990 * t)) * np.exp(-6 * t)
     fade = min(220, len(sound) // 4)
     sound[:fade] *= np.linspace(0, 1, fade, dtype=np.float32)
     sound[-fade:] *= np.linspace(1, 0, fade, dtype=np.float32)
     peak = max(float(np.max(np.abs(sound))), 1e-6)
-    return sound * (0.055 / peak)
+    return sound * (0.12 / peak)
 
 
 def make_effects(words, length, output):
@@ -49,7 +53,9 @@ def make_effects(words, length, output):
     for start, _, word in words:
         token = re.sub(r"[^a-z]", "", word.lower())
         kind = next((kind for kind, terms in KEYWORDS.items() if token in terms), None)
-        if kind and 0 <= start < length - 0.2 and (not events or start - events[-1][0] >= 4):
+        if (kind and 0 <= start < length - 0.2
+                and sum(previous == kind for _, previous in events) < 2
+                and (not events or start - events[-1][0] >= 4)):
             events.append((start, kind))
             if len(events) == 4:
                 break
