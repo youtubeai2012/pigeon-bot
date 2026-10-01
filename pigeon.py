@@ -465,14 +465,20 @@ def shot(page, name):
 
 
 def dismiss_popups(page):
-    for text in ("Got it", "Not now", "Allow all", "Decline optional cookies", "Accept all", "OK", "Skip"):
-        try:
-            b = page.get_by_role("button", name=text, exact=True)
-            if b.count() and b.first.is_visible():
-                b.first.click(timeout=2000)
-                page.wait_for_timeout(500)
-        except Exception:
-            pass
+    # TikTok can stack its content-check prompt over the "Got it" tour.
+    for _ in range(3):
+        dismissed = False
+        for text in ("Cancel", "Got it", "Not now", "Allow all", "Decline optional cookies", "Accept all", "OK", "Skip"):
+            try:
+                b = page.get_by_role("button", name=text, exact=True)
+                if b.count() and b.first.is_visible():
+                    b.first.click(timeout=2000)
+                    page.wait_for_timeout(500)
+                    dismissed = True
+            except Exception:
+                pass
+        if not dismissed:
+            break
 
 
 def tiktok_cookies():
@@ -531,7 +537,14 @@ def post_playwright(video, caption, check_only=False):
             page.wait_for_timeout(3000)
             dismiss_popups(page)
             shot(page, "2_uploading")
-            editor.click()
+            for attempt_number in range(3):
+                try:
+                    editor.click(timeout=5000)
+                    break
+                except Exception:
+                    if attempt_number == 2:
+                        raise
+                    dismiss_popups(page)
             page.keyboard.press("Control+A")
             page.keyboard.press("Backspace")
             for word in caption.split(" "):
