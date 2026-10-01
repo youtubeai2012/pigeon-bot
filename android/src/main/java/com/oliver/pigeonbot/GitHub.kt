@@ -50,7 +50,7 @@ class GitHub(private val token: String) {
         c.setRequestProperty("Content-Type", "application/json")
         val body = JSONObject()
             .put("ref", "main")
-            .put("inputs", JSONObject().put("mode", "random").put("request_id", requestId))
+            .put("inputs", JSONObject().put("mode", "random").put("post", "no").put("request_id", requestId))
         c.outputStream.use { it.write(body.toString().toByteArray()) }
         val code = c.responseCode
         if (code !in 200..299) throw Exception(errorText(c, code))
