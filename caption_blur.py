@@ -67,10 +67,20 @@ def blur_caption_frame(frame):
     if not mask.any():
         return frame
     height = frame.shape[0]
-    blurred = cv2.GaussianBlur(frame, (0, 0), sigmaX=max(12, height * 0.03))
-    alpha = cv2.GaussianBlur(mask, (0, 0), sigmaX=max(1.5, height * 0.0025))
+    blur_sigma = max(12, height * 0.03)
+    x, y, w, h = cv2.boundingRect(mask)
+    margin = round(blur_sigma * 4)
+    x0, y0 = max(0, x - margin), max(0, y - margin)
+    x1 = min(frame.shape[1], x + w + margin)
+    y1 = min(height, y + h + margin)
+    patch = frame[y0:y1, x0:x1]
+    patch_mask = mask[y0:y1, x0:x1]
+    blurred = cv2.GaussianBlur(patch, (0, 0), sigmaX=blur_sigma)
+    alpha = cv2.GaussianBlur(patch_mask, (0, 0), sigmaX=max(1.5, height * 0.0025))
     alpha = alpha.astype(np.float32)[:, :, None] / 255.0
-    return np.uint8(np.clip(frame * (1 - alpha) + blurred * alpha, 0, 255))
+    result = frame.copy()
+    result[y0:y1, x0:x1] = np.uint8(np.clip(patch * (1 - alpha) + blurred * alpha, 0, 255))
+    return result
 
 
 def blur_caption_video(source, output):
